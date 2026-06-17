@@ -4,7 +4,7 @@ Predizione del vincitore della **FIFA World Cup 2026** confrontando un modello
 statistico proprietario (Monte Carlo + Poisson) con il prediction market
 **Polymarket**, per individuare situazioni di valore atteso positivo (**+EV / Edge**).
 
-Progetto pensato per girare su hardware modesto: **niente deep learning, niente LLM** —
+Progetto pensato per girare su hardware modesto: **niente deep learning, niente LLM**.
 solo statistica pura, NumPy vettorizzato e software engineering modulare.
 
 ## Architettura
