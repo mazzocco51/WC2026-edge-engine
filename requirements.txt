@@ -1,0 +1,24 @@
+# ---------------------------------------------------------------------------
+# WC2026 - Quant Sports Betting | requirements.txt
+# Python 3.11+ consigliato. Versioni "pinnate" per build Docker riproducibili.
+# ---------------------------------------------------------------------------
+
+# --- Core matematico (Step 1) ---
+numpy==2.1.3            # campionamento Poisson vettorizzato (CPU, leggero)
+
+# --- Market Engine: Polymarket / HTTP async (Step 2) ---
+httpx==0.27.2          # client HTTP asincrono per le API di Polymarket
+
+# --- Backend API (Step 4) ---
+fastapi==0.115.5       # API asincrona
+uvicorn[standard]==0.32.1   # ASGI server per FastAPI
+pydantic==2.10.3       # validazione/serializzazione dei modelli di risposta
+
+# --- Frontend dashboard (Step 4) ---
+streamlit==1.40.2      # dashboard minimale (Team | Model % | Polymarket % | Edge)
+pandas==2.2.3          # tabella dati per la dashboard
+
+# --- Qualita' del codice / test ---
+pytest==8.3.4          # test del core
+mypy==1.13.0           # type checking statico (sfrutta i type hints)
+ruff==0.8.4            # linter + formatter veloce
