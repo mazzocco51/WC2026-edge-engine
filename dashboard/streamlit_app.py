@@ -29,7 +29,7 @@ st.caption(
 
 col1, col2 = st.columns(2)
 with col1:
-    n_sims = st.slider("Simulazioni Monte Carlo", 1_000, 50_000, 10_000, step=1_000)
+    n_sims = st.slider("Simulazioni Monte Carlo", 1_000, 20_000, 5_000, step=1_000)
 with col2:
     threshold = st.slider("Soglia divergenza notevole", 0.0, 0.10, 0.02, step=0.01)
 
@@ -42,7 +42,7 @@ def fetch_divergence(n_simulations: int, thr: float) -> list[dict]:
     resp = requests.get(
         f"{API_URL}/divergence",
         params={"n_simulations": n_simulations, "threshold": thr},
-        timeout=30,
+        timeout=120,
     )
     resp.raise_for_status()
     return resp.json()
@@ -78,7 +78,11 @@ view = pd.DataFrame(
     }
 )
 
-styled = view.style.applymap(_style_assessment, subset=["Assessment"])
+styled = (
+    view.style.format(
+        {"Model %": "{:.1f}", "Polymarket %": "{:.1f}", "Divergence (pt)": "{:+.1f}"}
+    ).applymap(_style_assessment, subset=["Assessment"])
+)
 st.dataframe(styled, use_container_width=True, hide_index=True)
 
 mad = (df["abs_divergence"] * 100).mean()

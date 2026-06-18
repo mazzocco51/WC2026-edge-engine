@@ -32,8 +32,7 @@ from app.api.schemas import (
     MetricsResponse,
     TeamProbability,
 )
-from app.core.simulator import run_tournament
-from app.data.dummy import DUMMY_TEAMS
+from app.core.engine import model_probabilities
 from app.market.polymarket import get_market_probabilities
 
 app = FastAPI(
@@ -54,14 +53,14 @@ async def health() -> HealthResponse:
 
 @app.get("/predictions", response_model=list[TeamProbability], tags=["model"])
 async def predictions(
-    n_simulations: int = Query(10_000, ge=1_000, le=200_000),
+    n_simulations: int = Query(5_000, ge=1_000, le=50_000),
 ) -> list[TeamProbability]:
     """
     Probabilita' di vittoria dal modello Monte Carlo.
 
     Il calcolo (CPU-bound) gira in un thread per non bloccare il loop async.
     """
-    probs = await asyncio.to_thread(run_tournament, DUMMY_TEAMS, n_simulations)
+    probs = await asyncio.to_thread(model_probabilities, n_simulations)
     return [TeamProbability(team=t, probability=p) for t, p in probs.items()]
 
 
@@ -79,7 +78,7 @@ async def _model_and_market(
     n_simulations: int,
 ) -> tuple[dict[str, float], list]:
     """Recupera modello (in thread) e mercato IN PARALLELO. Helper condiviso."""
-    model_task = asyncio.to_thread(run_tournament, DUMMY_TEAMS, n_simulations)
+    model_task = asyncio.to_thread(model_probabilities, n_simulations)
     try:
         return await asyncio.gather(model_task, get_market_probabilities())
     except Exception as exc:
@@ -88,7 +87,7 @@ async def _model_and_market(
 
 @app.get("/divergence", response_model=list[DivergenceRow], tags=["analysis"])
 async def divergence(
-    n_simulations: int = Query(10_000, ge=1_000, le=200_000),
+    n_simulations: int = Query(5_000, ge=1_000, le=50_000),
     threshold: float = Query(0.02, ge=0.0, le=0.5),
 ) -> list[DivergenceRow]:
     """
@@ -113,7 +112,7 @@ async def divergence(
 
 @app.get("/metrics", response_model=MetricsResponse, tags=["analysis"])
 async def metrics(
-    n_simulations: int = Query(10_000, ge=1_000, le=200_000),
+    n_simulations: int = Query(5_000, ge=1_000, le=50_000),
 ) -> MetricsResponse:
     """Metriche aggregate di efficienza (divergenza media, KL) sulle squadre comuni."""
     model_probs, market_probs = await _model_and_market(n_simulations)

@@ -21,6 +21,7 @@ solo statistica pura, NumPy vettorizzato e software engineering modulare.
 |---|---|---|
 | Math Engine (Monte Carlo + Poisson) | `app/core/` | ✅ |
 | Rating reali da dati CC0 (Dixon-Coles) | `app/data/`, `app/core/ratings.py` | ✅ |
+| Torneo 48 squadre formato 2026 | `app/core/tournament.py` | ✅ |
 | Market Engine (Polymarket API async) | `app/market/` | ✅ |
 | Analisi efficienza (divergenza + metriche) | `app/analysis/` | ✅ |
 | Backend API (FastAPI async) | `app/api/` | ✅ |
@@ -40,6 +41,9 @@ python -m app.market.run_demo
 
 # Demo con DATI REALI (CC0): scarica i risultati e stima attacco/difesa
 python -m app.core.run_real_demo
+
+# Demo Mondiale 2026 COMPLETO: 48 squadre, 12 gironi, eliminazione (dati reali)
+python -m app.core.run_wc_demo
 
 # Demo analisi di efficienza (divergenza modello-vs-mercato + metriche)
 python -m app.analysis.run_demo
@@ -97,3 +101,13 @@ backtest su tornei già conclusi sono disponibili **Brier score** e **log-loss**
 che misurano quale fonte prevede meglio una volta noto l'esito reale.
 
 > Strumento di sola analisi statistica: non produce indicazioni di scommessa.
+
+## Il torneo (formato 2026)
+
+`app/core/tournament.py` simula il Mondiale nel formato ufficiale a **48 squadre**:
+12 gironi da 4 all'italiana, passano le prime 2 di ogni girone + le 8 migliori
+terze (32 squadre), poi eliminazione diretta fino alla finale. I gironi sono
+costruiti dai rating stimati con un sorteggio a fasce (pot) riproducibile
+(`app/data/wc2026.py`). Il piazzamento delle terze e l'accoppiamento del
+tabellone usano una semplificazione documentata (teste di serie standard), non
+la tabella combinatoria esatta della FIFA.
