@@ -1,0 +1,35 @@
+# ---------------------------------------------------------------------------
+# docker-compose: due servizi dalla stessa immagine.
+#   - api:       backend FastAPI (uvicorn)   -> http://localhost:8000
+#   - dashboard: frontend Streamlit          -> http://localhost:8501
+# Avvio:  docker compose up --build
+# ---------------------------------------------------------------------------
+services:
+  api:
+    build: .
+    container_name: wc2026-api
+    ports:
+      - "8000:8000"
+    # Comando esplicito (= default del Dockerfile, ma lo rendiamo leggibile).
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+    # Healthcheck: docker sa quando l'API e' davvero pronta.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dashboard:
+    build: .
+    container_name: wc2026-dashboard
+    ports:
+      - "8501:8501"
+    # La dashboard raggiunge l'API tramite il NOME del servizio sulla rete
+    # interna di compose (DNS automatico): http://api:8000.
+    environment:
+      - API_URL=http://api:8000
+    command: streamlit run dashboard/streamlit_app.py --server.address 0.0.0.0 --server.port 8501
+    # Parte solo quando l'API e' "healthy".
+    depends_on:
+      api:
+        condition: service_healthy

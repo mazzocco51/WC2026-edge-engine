@@ -1,22 +1,31 @@
-# WC2026 — Quant Sports Betting Engine
+# WC2026 — Market Efficiency Engine
 
-Predizione del vincitore della **FIFA World Cup 2026** confrontando un modello
-statistico proprietario (Monte Carlo + Poisson) con il prediction market
-**Polymarket**, per individuare situazioni di valore atteso positivo (**+EV / Edge**).
+Studio di **efficienza di un prediction market**: un modello statistico
+proprietario (Monte Carlo + Poisson) stima la probabilità di vittoria di ogni
+nazionale alla **FIFA World Cup 2026** e viene confrontato con le probabilità
+implicite del mercato **Polymarket**, per misurare **dove e quanto** le due
+fonti divergono e quanto il mercato è efficiente.
 
 Progetto pensato per girare su hardware modesto: **niente deep learning, niente LLM** —
 solo statistica pura, NumPy vettorizzato e software engineering modulare.
+
+> ⚠️ **Disclaimer** — Progetto a fini **esclusivamente educativi e dimostrativi**
+> (portfolio). **Non commerciale**, **non** è un consiglio di scommessa o finanziario.
+>
+> 📊 **Dati** — Risultati storici da [martj42 / international_results](https://github.com/martj42/international_results),
+> licenza **CC0-1.0** (pubblico dominio). Dettagli e licenze in [`DATA_SOURCES.md`](DATA_SOURCES.md).
 
 ## Architettura
 
 | Componente | Modulo | Stato |
 |---|---|---|
-| Math Engine (Monte Carlo + Poisson) | `app/core/` | ✅ Step 1 |
-| Market Engine (Polymarket API async) | `app/market/` | ✅ Step 2 |
-| Edge Calculator (Model vs Market) | `app/edge/` | 🔜 Step 3 |
-| Backend API (FastAPI async) | `app/api/` | 🔜 Step 4 |
-| Dashboard (Streamlit) | `dashboard/` | 🔜 Step 4 |
-| Containerizzazione (Docker) | `Dockerfile`, `docker-compose.yml` | 🔜 Step 4 |
+| Math Engine (Monte Carlo + Poisson) | `app/core/` | ✅ |
+| Rating reali da dati CC0 (Dixon-Coles) | `app/data/`, `app/core/ratings.py` | ✅ |
+| Market Engine (Polymarket API async) | `app/market/` | ✅ |
+| Analisi efficienza (divergenza + metriche) | `app/analysis/` | ✅ |
+| Backend API (FastAPI async) | `app/api/` | ✅ |
+| Dashboard (Streamlit) | `dashboard/` | ✅ |
+| Containerizzazione (Docker) | `Dockerfile`, `docker-compose.yml` | ✅ |
 
 ## Quickstart
 
@@ -29,8 +38,33 @@ python -m app.core.run_demo
 # Demo del market engine (probabilità implicite live da Polymarket)
 python -m app.market.run_demo
 
+# Demo con DATI REALI (CC0): scarica i risultati e stima attacco/difesa
+python -m app.core.run_real_demo
+
+# Demo analisi di efficienza (divergenza modello-vs-mercato + metriche)
+python -m app.analysis.run_demo
+
 # Test
 pytest -q
+```
+
+## Avvio con Docker (consigliato)
+
+```bash
+docker compose up --build
+```
+
+- API (FastAPI + docs OpenAPI): http://localhost:8000/docs
+- Dashboard (Streamlit): http://localhost:8501
+
+## Avvio manuale (senza Docker)
+
+```bash
+# Terminale 1 — backend
+uvicorn app.api.main:app --reload
+
+# Terminale 2 — dashboard
+streamlit run dashboard/streamlit_app.py
 ```
 
 ## Il modello (Step 1)
@@ -51,3 +85,15 @@ Il Market Engine interroga in modo asincrono (`httpx`) la Gamma API pubblica di
 Polymarket per l'evento *World Cup Winner*. Per ogni squadra estrae il prezzo
 "Yes" (= probabilità implicita) e rimuove il **vig** (overround) normalizzando
 le probabilità a somma 100%, così sono confrontabili 1:1 con il modello.
+
+## L'analisi di efficienza
+
+Il modulo `app/analysis/` confronta le due distribuzioni di probabilità e ne
+misura la **divergenza** (`model − market`, con segno): dove è vicina a zero il
+mercato e il modello concordano (mercato efficiente su quella squadra), dove è
+ampia almeno una delle due fonti sta sopra/sotto-stimando. A livello aggregato
+si calcolano la **divergenza media assoluta** e la **KL divergence**; per il
+backtest su tornei già conclusi sono disponibili **Brier score** e **log-loss**,
+che misurano quale fonte prevede meglio una volta noto l'esito reale.
+
+> Strumento di sola analisi statistica: non produce indicazioni di scommessa.

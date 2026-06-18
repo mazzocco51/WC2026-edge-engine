@@ -1,0 +1,14 @@
+# Riduce il contesto di build (build piu' veloci, immagini piu' pulite).
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.git/
+.gitignore
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/
+*.md
+.env
+.DS_Store

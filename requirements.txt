@@ -17,6 +17,7 @@ pydantic==2.10.3       # validazione/serializzazione dei modelli di risposta
 # --- Frontend dashboard (Step 4) ---
 streamlit==1.40.2      # dashboard minimale (Team | Model % | Polymarket % | Edge)
 pandas==2.2.3          # tabella dati per la dashboard
+requests==2.32.3       # client HTTP (sincrono) della dashboard verso l'API
 
 # --- Qualita' del codice / test ---
 pytest==8.3.4          # test del core
