@@ -1,31 +1,29 @@
 """
 ratings.py
 ==========
-Stima dei coefficienti di ATTACCO e DIFESA di ogni nazionale a partire dai
-risultati storici, per alimentare il modello di Poisson con dati REALI al posto
-del dataset dummy.
+Stima dei coefficienti di ATTACCO e DIFESA di ogni nazionale dai risultati
+storici, con regolarizzazione (shrinkage) verso un PRIOR di forza Elo e
+parametro rho di Dixon-Coles.
 
 ==================== FONTE DATI (UNICA) ====================
-Risultati storici: Mart Jürisoo (martj42), licenza CC0-1.0 (pubblico dominio).
+Risultati storici: Mart Jurisoo (martj42), licenza CC0-1.0 (pubblico dominio).
 https://github.com/martj42/international_results  (vedi DATA_SOURCES.md)
 DISCLAIMER: progetto a fini EDUCATIVI/DIMOSTRATIVI, NON commerciale.
 ===========================================================
 
 Metodo
 ------
-Modello "double Poisson" con forze di attacco/difesa (Maher 1982; Dixon-Coles
-1997). I gol segnati dalla squadra i contro la j hanno media:
+Modello "double Poisson" (Maher 1982): forze attacco/difesa stimate per massima
+verosimiglianza via iterative scaling (solo NumPy), con time-decay. Si stima poi
+il parametro rho di Dixon-Coles (1997).
 
-    lambda = base * attacco_i * difesa_j   (* vantaggio_campo se i gioca in casa)
-
-dove `attacco`/`difesa` sono moltiplicatori relativi alla media (1.0 = squadra
-media); `difesa > 1` = subisce piu' gol (difesa debole). Stessa convenzione del
-modello in poisson.py, quindi i Team prodotti qui sono usabili senza modifiche.
-
-Stima: massima verosimiglianza Poisson via "iterative scaling" (aggiornamenti
-moltiplicativi a punto fisso) — robusto e dipendente solo da NumPy. Le partite
-sono pesate con un decadimento temporale (time-decay): le piu' recenti contano
-di piu', cosi' i rating riflettono la forma attuale delle squadre.
+SHRINKAGE verso PRIOR ELO
+-------------------------
+La regolarizzazione aggiunge a ogni squadra alcune "partite fantasma". Invece di
+tirarla verso una squadra media piatta (1.0), la tiriamo verso il suo livello di
+forza ELO (calcolato dai risultati CC0, vedi elo.py): le squadre forti per Elo
+restano forti anche con pochi dati recenti, le altre si appoggiano all'Elo. Se
+nessun prior viene fornito, lo shrinkage e' verso 1.0 (comportamento classico).
 """
 
 from __future__ import annotations
@@ -35,22 +33,23 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from app.core.dixon_coles import estimate_rho
 from app.core.models import Team
 from app.data.loader import Match
 
-# Emivita del peso temporale: una partita di ~2 anni fa pesa la meta' di una di
-# oggi. Parametro di calibrazione (piu' corto = piu' reattivo, piu' rumoroso).
-DEFAULT_HALF_LIFE_DAYS: float = 365 * 2
+DEFAULT_HALF_LIFE_DAYS: float = 365 * 4    # ~4 anni: ottimo dal backtest RPS
+DEFAULT_SHRINKAGE: float = 0.0  # backtest RPS: lo shrinkage peggiora -> default 0 (modello puro)
 
 
 @dataclass(frozen=True)
 class RatingsResult:
     """Esito della stima: squadre con rating + parametri globali del modello."""
 
-    teams: list[Team]            # Team(name, attacco, difesa) per ogni nazionale
-    base_goals: float            # gol attesi medio (squadra media vs media, neutro)
-    home_advantage: float        # moltiplicatore vantaggio campo (>1)
-    n_matches: int               # partite usate nella stima
+    teams: list[Team]
+    base_goals: float
+    home_advantage: float
+    rho: float
+    n_matches: int
 
 
 def _time_weights(dates: np.ndarray, half_life_days: float) -> np.ndarray:
@@ -64,30 +63,30 @@ def _time_weights(dates: np.ndarray, half_life_days: float) -> np.ndarray:
 def estimate_ratings(
     matches: list[Match],
     half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
+    shrinkage: float = DEFAULT_SHRINKAGE,
+    strength_prior: dict[str, float] | None = None,
     max_iter: int = 200,
     tol: float = 1e-7,
 ) -> RatingsResult:
     """
-    Stima attacco/difesa di ogni squadra dai risultati osservati.
+    Stima attacco/difesa + vantaggio campo + rho, con shrinkage verso un prior.
 
     Args:
-        matches: lista di Match (dal loader CC0).
-        half_life_days: emivita del decadimento temporale.
-        max_iter: iterazioni massime del punto fisso.
-        tol: soglia di convergenza sui parametri.
-
-    Returns:
-        RatingsResult con i Team (attacco/difesa) e i parametri globali.
+        matches: storico partite.
+        half_life_days: emivita del time-decay.
+        shrinkage: n. di "partite fantasma" verso il prior (0 = nessuna).
+        strength_prior: {squadra: moltiplicatore di forza} (es. da Elo). Una
+            forza s>1 implica prior attacco sqrt(s) e prior difesa 1/sqrt(s)
+            (squadra forte = segna di piu' e subisce di meno, a parita' di gol
+            totali). Se None, il prior e' 1.0 per tutti (shrinkage verso media).
     """
     if not matches:
         raise ValueError("Nessuna partita fornita per la stima dei rating.")
 
-    # --- Indicizzazione delle squadre ---
     names = sorted({m.home_team for m in matches} | {m.away_team for m in matches})
     idx = {name: i for i, name in enumerate(names)}
     n_teams = len(names)
 
-    # --- Vettorializzazione dei dati ---
     home = np.array([idx[m.home_team] for m in matches])
     away = np.array([idx[m.away_team] for m in matches])
     hs = np.array([m.home_score for m in matches], dtype=float)
@@ -97,60 +96,62 @@ def estimate_ratings(
 
     w = _time_weights(dates, half_life_days)
 
-    # --- Numeratori (solo dati, costanti tra le iterazioni) ---
-    # Gol segnati da ciascuna squadra (numeratore dell'attacco).
+    # Prior di attacco/difesa per squadra (default 1.0).
+    prior_att = np.ones(n_teams)
+    prior_def = np.ones(n_teams)
+    if strength_prior:
+        for name, i in idx.items():
+            s = strength_prior.get(name, 1.0)
+            s = max(s, 1e-6)
+            prior_att[i] = math.sqrt(s)
+            prior_def[i] = 1.0 / math.sqrt(s)
+
     att_num = np.zeros(n_teams)
     np.add.at(att_num, home, w * hs)
     np.add.at(att_num, away, w * as_)
-    # Gol subiti da ciascuna squadra (numeratore della difesa).
     def_num = np.zeros(n_teams)
-    np.add.at(def_num, away, w * hs)   # la squadra 'away' subisce i gol di 'home'
-    np.add.at(def_num, home, w * as_)  # la squadra 'home' subisce i gol di 'away'
+    np.add.at(def_num, away, w * hs)
+    np.add.at(def_num, home, w * as_)
 
-    eps = 1e-9  # evita divisioni per zero
-
-    # --- Inizializzazione ---
-    attack = np.ones(n_teams)
-    defense = np.ones(n_teams)
-    base = float((w * (hs + as_)).sum() / (2.0 * w.sum()))  # gol medi per squadra
-    gamma = 1.3  # stima iniziale del vantaggio campo
+    eps = 1e-9
+    attack = prior_att.copy()
+    defense = prior_def.copy()
+    base = float((w * (hs + as_)).sum() / (2.0 * w.sum()))
+    gamma = 1.3
 
     for _ in range(max_iter):
         prev = np.concatenate([attack, defense, [gamma]])
-
-        # Fattore casa applicato all'evento "gol della squadra di casa".
         hf = np.where(neutral, 1.0, gamma)
 
-        # --- Aggiorna ATTACCO ---
+        # Pseudo-conteggio verso il PRIOR (Elo): k partite fantasma in cui la
+        # squadra segna/subisce al tasso del prior, non a quello medio.
+        k = shrinkage * base
+
         att_den = np.zeros(n_teams)
-        np.add.at(att_den, home, w * base * defense[away] * hf)   # i in casa
-        np.add.at(att_den, away, w * base * defense[home] * 1.0)  # i in trasferta
-        attack = att_num / (att_den + eps)
+        np.add.at(att_den, home, w * base * defense[away] * hf)
+        np.add.at(att_den, away, w * base * defense[home] * 1.0)
+        attack = (att_num + k * prior_att) / (att_den + k + eps)
 
-        # --- Aggiorna DIFESA ---
         def_den = np.zeros(n_teams)
-        np.add.at(def_den, away, w * base * attack[home] * hf)    # subisce da casa
-        np.add.at(def_den, home, w * base * attack[away] * 1.0)   # subisce da away
-        defense = def_num / (def_den + eps)
+        np.add.at(def_den, away, w * base * attack[home] * hf)
+        np.add.at(def_den, home, w * base * attack[away] * 1.0)
+        defense = (def_num + k * prior_def) / (def_den + k + eps)
 
-        # --- Aggiorna vantaggio campo (solo match non neutri) ---
         mask = ~neutral
         num_g = (w[mask] * hs[mask]).sum()
         den_g = (w[mask] * base * attack[home[mask]] * defense[away[mask]]).sum()
         gamma = num_g / (den_g + eps)
 
-        # --- Normalizza i moltiplicatori a media 1 (assorbe la scala in `base`) ---
-        ma = attack.mean()
-        attack /= ma
-        base *= ma
-        mb = defense.mean()
-        defense /= mb
-        base *= mb
+        ma = attack.mean(); attack /= ma; base *= ma
+        mb = defense.mean(); defense /= mb; base *= mb
 
-        # --- Convergenza ---
-        cur = np.concatenate([attack, defense, [gamma]])
-        if np.max(np.abs(cur - prev)) < tol:
+        if np.max(np.abs(np.concatenate([attack, defense, [gamma]]) - prev)) < tol:
             break
+
+    hf = np.where(neutral, 1.0, gamma)
+    lam = base * attack[home] * defense[away] * hf
+    mu = base * attack[away] * defense[home]
+    rho = estimate_rho(lam, mu, hs, as_, w)
 
     teams = [
         Team(name=name, attack=float(attack[i]), defense=float(defense[i]))
@@ -162,5 +163,6 @@ def estimate_ratings(
         teams=teams,
         base_goals=float(base),
         home_advantage=float(gamma),
+        rho=float(rho),
         n_matches=len(matches),
     )

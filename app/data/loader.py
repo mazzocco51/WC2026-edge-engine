@@ -16,8 +16,7 @@ DISCLAIMER: progetto a fini ESCLUSIVAMENTE EDUCATIVI e DIMOSTRATIVI.
 NON commerciale. Nessun consiglio di scommessa.
 
 Nota: il download avviene a RUNTIME dalla fonte originale (non ridistribuiamo
-i dati nel repository), usando solo la libreria standard di Python (urllib),
-quindi nessuna dipendenza aggiuntiva e nessuna API key.
+i dati nel repository), usando solo la libreria standard di Python (urllib).
 """
 
 from __future__ import annotations
@@ -44,16 +43,14 @@ class Match:
     home_score: int
     away_score: int
     neutral: bool
+    tournament: str = "Friendly"   # tipo di torneo (per l'importanza nell'Elo)
 
 
 def _parse_rows(rows: list[dict[str, str]], since: date) -> list[Match]:
     """Converte le righe CSV grezze in oggetti Match, filtrando per data."""
     matches: list[Match] = []
     for row in rows:
-        # Parsing robusto: salta le partite future/annullate, che nel dataset
-        # hanno punteggio vuoto o 'NA' (il Mondiale 2026 e' in corso, quindi
-        # contiene anche fixture non ancora giocate). Qualsiasi valore non
-        # numerico o data non valida fa scartare la riga.
+        # Salta partite future/annullate (punteggio vuoto o 'NA').
         try:
             d = datetime.strptime(row["date"], "%Y-%m-%d").date()
             home_score = int(row["home_score"])
@@ -70,6 +67,7 @@ def _parse_rows(rows: list[dict[str, str]], since: date) -> list[Match]:
                 home_score=home_score,
                 away_score=away_score,
                 neutral=row.get("neutral", "FALSE").strip().upper() == "TRUE",
+                tournament=row.get("tournament", "Friendly").strip() or "Friendly",
             )
         )
     return matches

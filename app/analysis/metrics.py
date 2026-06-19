@@ -88,3 +88,80 @@ def log_loss(probabilities: dict[str, float], winner: str, eps: float = 1e-12) -
     """
     p = max(probabilities.get(winner, 0.0), eps)
     return -math.log(p)
+
+
+def ranked_probability_score(probs: list[float], outcome_index: int) -> float:
+    """
+    Ranked Probability Score (RPS) per esiti ORDINATI (es. 1X2: casa/pareggio/ospite).
+
+    A differenza del Brier, tiene conto dell'ordine: un errore "vicino" (prevedere
+    pareggio quando vince la casa) e' penalizzato meno di uno "lontano" (prevedere
+    la vittoria ospite). Piu' basso = meglio (0 = perfetto, 1 = pessimo).
+
+    Args:
+        probs: probabilita' degli esiti in ORDINE (devono sommare ~1).
+        outcome_index: indice dell'esito realmente avvenuto (0-based).
+
+    Returns:
+        RPS in [0, 1].
+    """
+    r = len(probs)
+    cum_p = 0.0
+    cum_e = 0.0
+    total = 0.0
+    for i in range(r - 1):
+        cum_p += probs[i]
+        cum_e += 1.0 if i == outcome_index else 0.0
+        total += (cum_p - cum_e) ** 2
+    return total / (r - 1)
+
+
+def reliability_curve(
+    predictions: list[float],
+    outcomes: list[int],
+    n_bins: int = 10,
+) -> tuple[list[float], list[float], list[int], float]:
+    """
+    Curva di calibrazione (reliability diagram) per previsioni binarie.
+
+    Raggruppa le probabilita' previste in `n_bins` intervalli; per ciascun bin
+    calcola la probabilita' media prevista e la frequenza reale dell'evento.
+    Un modello ben calibrato ha (previsto ~ reale) -> punti sulla diagonale.
+
+    Args:
+        predictions: probabilita' previste in [0,1] (es. P(vittoria casa)).
+        outcomes: esiti reali 0/1 allineati alle previsioni.
+        n_bins: numero di intervalli di probabilita'.
+
+    Returns:
+        (prob_media_prevista, freq_reale, conteggio_per_bin, ece)
+        dove `ece` (Expected Calibration Error) e' lo scostamento medio assoluto
+        previsto-vs-reale pesato per la numerosita' dei bin (piu' basso = meglio).
+    """
+    if len(predictions) != len(outcomes):
+        raise ValueError("predictions e outcomes devono avere la stessa lunghezza.")
+
+    edges = [i / n_bins for i in range(n_bins + 1)]
+    pred_means: list[float] = []
+    obs_freqs: list[float] = []
+    counts: list[int] = []
+    ece = 0.0
+    total = len(predictions) or 1
+
+    for b in range(n_bins):
+        lo, hi = edges[b], edges[b + 1]
+        # L'ultimo bin include l'estremo destro (prob = 1.0).
+        idxs = [
+            i for i, p in enumerate(predictions)
+            if (lo <= p < hi) or (b == n_bins - 1 and p == hi)
+        ]
+        if not idxs:
+            continue
+        pm = sum(predictions[i] for i in idxs) / len(idxs)
+        of = sum(outcomes[i] for i in idxs) / len(idxs)
+        pred_means.append(pm)
+        obs_freqs.append(of)
+        counts.append(len(idxs))
+        ece += (len(idxs) / total) * abs(pm - of)
+
+    return pred_means, obs_freqs, counts, ece

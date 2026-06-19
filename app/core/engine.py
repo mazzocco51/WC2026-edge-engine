@@ -18,10 +18,11 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from app.core.models import Team
+from app.core.elo import compute_elo, elo_strength_multipliers
 from app.core.ratings import RatingsResult, estimate_ratings
 from app.core.tournament import simulate_world_cup
 from app.data.loader import load_results
-from app.data.wc2026 import build_groups_from_ratings
+from app.data.wc2026 import build_real_groups
 
 
 @dataclass(frozen=True)
@@ -36,8 +37,10 @@ class Field:
 def load_field(since_year: int = 2018) -> Field:
     """Scarica i dati CC0, stima i rating e costruisce i 12 gironi (in cache)."""
     matches = load_results(since_year=since_year)
-    ratings = estimate_ratings(matches)
-    groups = build_groups_from_ratings(ratings)
+    # Prior di forza Elo (dai risultati CC0) -> usato nello shrinkage dei rating.
+    elo_prior = elo_strength_multipliers(compute_elo(matches))
+    ratings = estimate_ratings(matches, strength_prior=elo_prior)
+    groups = build_real_groups(ratings)  # sorteggio UFFICIALE 2026
     return Field(ratings=ratings, groups=groups)
 
 

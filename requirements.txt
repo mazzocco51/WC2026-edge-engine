@@ -19,6 +19,9 @@ streamlit==1.40.2      # dashboard minimale (Team | Model % | Polymarket % | Edg
 pandas==2.2.3          # tabella dati per la dashboard
 requests==2.32.3       # client HTTP (sincrono) della dashboard verso l'API
 
+# --- Analisi / grafici (reliability diagram) ---
+matplotlib==3.9.2      # grafico di calibrazione (reliability diagram)
+
 # --- Qualita' del codice / test ---
 pytest==8.3.4          # test del core
 mypy==1.13.0           # type checking statico (sfrutta i type hints)
