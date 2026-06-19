@@ -77,6 +77,8 @@ A single simulated knockout run (Round of 16 → Final), winners in gold:
 
 <img src="docs/bracket.png" alt="Knockout bracket (single simulation)" width="460">
 
+> The bracket starts from the Round of 16 for space reasons (the Round of 32 is omitted).
+
 ## Key findings (measured, not assumed)
 
 - **Time-decay** helps; the RPS optimum is a long ~4-year half-life (national
