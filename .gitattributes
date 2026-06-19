@@ -1,0 +1,9 @@
+# Normalize line endings: store text as LF in the repo, auto-convert on checkout.
+* text=auto eol=lf
+
+# Treat binaries as binary (no EOL conversion).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.csv binary
