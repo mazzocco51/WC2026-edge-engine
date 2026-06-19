@@ -136,16 +136,16 @@ def test_reliability_curve_ece() -> None:
     assert ece_bad > 0.4  # sempre 0.5 ma evento sempre 1 -> scalibrato
 
 
-def test_reliability_curve_ece() -> None:
-    import random
-    from app.analysis.metrics import reliability_curve
-    random.seed(0)
-    preds, outs = [], []
-    for p10 in range(11):
-        p = p10 / 10
-        for _ in range(200):
-            preds.append(p); outs.append(1 if random.random() < p else 0)
-    _, _, _, ece = reliability_curve(preds, outs, n_bins=10)
-    assert ece < 0.05  # modello ben calibrato -> ECE basso
-    _, _, _, ece_bad = reliability_curve([0.5] * 100, [1] * 100, n_bins=10)
-    assert ece_bad > 0.4  # sempre 0.5 ma evento sempre 1 -> scalibrato
+def test_host_advantage_boosts_host() -> None:
+    import string
+    from app.core.models import Team
+    from app.core.tournament import simulate_world_cup
+    names = ["United States"] + [f"T{i:02d}" for i in range(47)]
+    teams = [Team(name=n, attack=1.0, defense=1.0) for n in names]
+    gn = list(string.ascii_uppercase[:12])
+    groups = {g: [] for g in gn}
+    for i, t in enumerate(teams):
+        groups[gn[i % 12]].append(t)
+    p_no = simulate_world_cup(groups, 1.4, n_simulations=3000, seed=1, host_advantage=1.0)["United States"]
+    p_yes = simulate_world_cup(groups, 1.4, n_simulations=3000, seed=1, host_advantage=1.2)["United States"]
+    assert p_yes > p_no  # il fattore ospitante aumenta la probabilita'

@@ -20,7 +20,7 @@ from functools import lru_cache
 from app.core.models import Team
 from app.core.elo import compute_elo, elo_strength_multipliers
 from app.core.ratings import RatingsResult, estimate_ratings
-from app.core.tournament import simulate_world_cup
+from app.core.tournament import simulate_brackets, simulate_world_cup
 from app.data.loader import load_results
 from app.data.wc2026 import build_real_groups
 
@@ -51,3 +51,13 @@ def model_probabilities(n_simulations: int = 10_000) -> dict[str, float]:
     return simulate_world_cup(
         field.groups, field.ratings.base_goals, n_simulations=n_simulations
     )
+
+
+def sample_brackets(n: int = 3) -> list[dict]:
+    """`n` simulazioni Monte Carlo di esempio (campione nuovo a ogni chiamata).
+
+    Stesso modello/probabilita': cambia solo quale campione di tornei viene
+    estratto, cosi' il pulsante Refresh della UI mostra tabelloni diversi.
+    """
+    field = load_field()
+    return simulate_brackets(field.groups, field.ratings.base_goals, n=n, seed=None)

@@ -1,21 +1,19 @@
 """
 main.py
 =======
-Applicazione FastAPI asincrona: espone modello, mercato ed edge via HTTP.
+Async FastAPI app exposing the model, the market and the analysis over HTTP.
 
-Endpoint
---------
-GET /health        -> stato del servizio
-GET /predictions   -> probabilita' del modello Monte Carlo
-GET /market        -> probabilita' implicite (de-vig) di Polymarket
-GET /edge          -> confronto modello vs mercato con segnali +EV
+Endpoints
+---------
+GET /health       -> service status
+GET /predictions  -> Monte Carlo model win probabilities
+GET /market       -> Polymarket implied probabilities (de-vigged)
+GET /divergence   -> model-vs-market divergence (efficiency study)
+GET /metrics      -> aggregate efficiency metrics (mean divergence, KL)
+GET /bracket      -> sample knockout brackets with results
 
-Note di concorrenza
--------------------
-- Le chiamate a Polymarket sono I/O di rete: gia' async (httpx).
-- Il Monte Carlo e' CPU-bound e BLOCCANTE: se lo eseguissimo nel loop async
-  bloccherebbe l'intero server. Lo spostiamo quindi in un thread separato con
-  `asyncio.to_thread`, mantenendo l'endpoint reattivo.
+Concurrency: Polymarket calls are async (httpx); the CPU-bound Monte Carlo runs
+in a thread (`asyncio.to_thread`) and the two are fetched in parallel.
 """
 
 from __future__ import annotations
@@ -32,22 +30,22 @@ from app.api.schemas import (
     MetricsResponse,
     TeamProbability,
 )
-from app.core.engine import model_probabilities
+from app.core.engine import model_probabilities, sample_brackets
 from app.market.polymarket import get_market_probabilities
 
 app = FastAPI(
     title="WC2026 Market Efficiency Engine",
     version="2.0.0",
     description=(
-        "Studio di efficienza di mercato: confronto tra un modello Monte Carlo + "
-        "Poisson e il prediction market Polymarket. Fini educativi/dimostrativi."
+        "Market-efficiency study: a Monte Carlo + Poisson model vs the Polymarket "
+        "prediction market. Educational/demonstrative, non-commercial."
     ),
 )
 
 
 @app.get("/health", response_model=HealthResponse, tags=["meta"])
 async def health() -> HealthResponse:
-    """Health check banale, utile per Docker/orchestratori."""
+    """Trivial health check (useful for Docker/orchestrators)."""
     return HealthResponse(status="ok")
 
 
@@ -55,34 +53,28 @@ async def health() -> HealthResponse:
 async def predictions(
     n_simulations: int = Query(5_000, ge=1_000, le=50_000),
 ) -> list[TeamProbability]:
-    """
-    Probabilita' di vittoria dal modello Monte Carlo.
-
-    Il calcolo (CPU-bound) gira in un thread per non bloccare il loop async.
-    """
+    """Monte Carlo win probabilities (CPU-bound work runs in a thread)."""
     probs = await asyncio.to_thread(model_probabilities, n_simulations)
     return [TeamProbability(team=t, probability=p) for t, p in probs.items()]
 
 
 @app.get("/market", response_model=list[TeamProbability], tags=["market"])
 async def market() -> list[TeamProbability]:
-    """Probabilita' implicite (post de-vig) dal mercato Polymarket."""
+    """De-vigged implied probabilities from Polymarket."""
     try:
         markets = await get_market_probabilities()
-    except Exception as exc:  # rete/API non disponibili
-        raise HTTPException(status_code=502, detail=f"Polymarket non raggiungibile: {exc}")
+    except Exception as exc:  # network/API unavailable
+        raise HTTPException(status_code=502, detail=f"Polymarket unreachable: {exc}")
     return [TeamProbability(team=m.team, probability=m.fair_prob) for m in markets]
 
 
-async def _model_and_market(
-    n_simulations: int,
-) -> tuple[dict[str, float], list]:
-    """Recupera modello (in thread) e mercato IN PARALLELO. Helper condiviso."""
+async def _model_and_market(n_simulations: int) -> tuple[dict[str, float], list]:
+    """Fetch model (in a thread) and market IN PARALLEL. Shared helper."""
     model_task = asyncio.to_thread(model_probabilities, n_simulations)
     try:
         return await asyncio.gather(model_task, get_market_probabilities())
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Polymarket non raggiungibile: {exc}")
+        raise HTTPException(status_code=502, detail=f"Polymarket unreachable: {exc}")
 
 
 @app.get("/divergence", response_model=list[DivergenceRow], tags=["analysis"])
@@ -90,11 +82,7 @@ async def divergence(
     n_simulations: int = Query(5_000, ge=1_000, le=50_000),
     threshold: float = Query(0.02, ge=0.0, le=0.5),
 ) -> list[DivergenceRow]:
-    """
-    Confronto modello-vs-mercato: dove e quanto divergono le due stime.
-
-    Studio di efficienza di mercato (non un consiglio di scommessa).
-    """
+    """Model-vs-market divergence (efficiency study; not betting advice)."""
     model_probs, market_probs = await _model_and_market(n_simulations)
     rows = compute_divergence(model_probs, market_probs, threshold=threshold)
     return [
@@ -114,7 +102,7 @@ async def divergence(
 async def metrics(
     n_simulations: int = Query(5_000, ge=1_000, le=50_000),
 ) -> MetricsResponse:
-    """Metriche aggregate di efficienza (divergenza media, KL) sulle squadre comuni."""
+    """Aggregate efficiency metrics (mean abs divergence, KL) over common teams."""
     model_probs, market_probs = await _model_and_market(n_simulations)
     rows = compute_divergence(model_probs, market_probs)
     model_map = {r.team: r.model_prob for r in rows}
@@ -124,3 +112,9 @@ async def metrics(
         kl_divergence=kl_divergence(model_map, market_map),
         teams_compared=len(rows),
     )
+
+
+@app.get("/bracket", tags=["model"])
+async def bracket(n: int = Query(3, ge=1, le=5)) -> list[dict]:
+    """`n` sample knockout brackets (with scores) from the Monte Carlo engine."""
+    return await asyncio.to_thread(sample_brackets, n)

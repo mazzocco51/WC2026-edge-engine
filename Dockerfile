@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 2) Poi copiamo il codice applicativo.
 COPY app ./app
 COPY dashboard ./dashboard
+COPY .streamlit ./.streamlit
 
 # Documenta le porte usate (API 8000, Streamlit 8501).
 EXPOSE 8000 8501
