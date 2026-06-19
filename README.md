@@ -24,8 +24,6 @@ NumPy and modular software engineering.
 
 ![Dashboard — model vs market and sample brackets](docs/dashboard.png)
 
-![Knockout bracket (single simulation)](docs/bracket.png)
-
 ## Quickstart
 
 ```bash
@@ -72,6 +70,12 @@ The pipeline is `CC0 results → Elo → attack/defense ratings → 48-team tour
 
 Backend: async **FastAPI** (CPU-bound sim in a threadpool, parallel fetch,
 caching). Frontend: **Streamlit** (pure client). Packaged with **Docker**.
+
+## Example bracket
+
+A single simulated knockout run (Round of 16 → Final), winners in gold:
+
+<img src="docs/bracket.png" alt="Knockout bracket (single simulation)" width="460">
 
 ## Key findings (measured, not assumed)
 
